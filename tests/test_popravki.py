@@ -153,13 +153,17 @@ class FixAndReset(unittest.TestCase):
             os.makedirs(d + "/apt/sources.list.d")
             open(d + "/apt/sources.list", "w").write(LIST)
             open(d + "/apt/sources.list.d/debian.sources", "w").write(SOURCES)
-            state = {"pkgs": {"bash"}}
+            state = {"pkgs": {"bash", "power-profiles-daemon"}}
             calls = []
 
             def fake_run(cmd, **kw):
                 calls.append(cmd)
                 if cmd[:2] == ["apt-get", "install"]:
-                    state["pkgs"] |= set(cmd[3:]) | {"firmware-misc-nonfree"}       # и една зависимост
+                    if "firmware-iwlwifi" in cmd:
+                        state["pkgs"] |= set(cmd[3:]) | {"firmware-misc-nonfree"}   # и една зависимост
+                        state["pkgs"] -= {"power-profiles-daemon"}                  # и apt маха конфликтен пакет
+                    else:
+                        state["pkgs"] |= set(cmd[3:])
                 if cmd[:2] == ["apt-get", "purge"]:
                     state["pkgs"] -= set(cmd[3:])
                 return mock.Mock(returncode=0, stdout="")
@@ -174,13 +178,35 @@ class FixAndReset(unittest.TestCase):
                 self.assertIn("non-free-firmware", open(d + "/apt/sources.list").read())
                 h = popravi.load_history(popravi.ISTORIA)
                 self.assertEqual(h[0]["packages"], ["firmware-iwlwifi", "firmware-misc-nonfree"])
+                self.assertEqual(h[0]["removed"], ["power-profiles-daemon"])
                 popravi.reset()
             self.assertEqual(open(d + "/apt/sources.list").read(), LIST)
             self.assertEqual(open(d + "/apt/sources.list.d/debian.sources").read(), SOURCES)
-            self.assertEqual(state["pkgs"], {"bash"})                    # нищо чуждо не е махнато
+            self.assertEqual(state["pkgs"], {"bash", "power-profiles-daemon"})   # махнатото е върнато, нищо чуждо не е пипано
             self.assertFalse(os.path.exists(d + "/lib/istoria.json"))
             self.assertIn(["apt-get", "purge", "-y", "firmware-iwlwifi", "firmware-misc-nonfree"], calls)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Conflicts(unittest.TestCase):
+    def test_conflicting_package_unchecked_with_warning(self):
+        r = report([j.Finding(j.WARN, "Намерен пакет: tlp", "…", "tlp")])
+        f, = j.plan(r, removes=lambda p: ["power-profiles-daemon"] if "tlp" in p else [])
+        self.assertFalse(f.default)
+        self.assertEqual(f.removes, ["power-profiles-daemon"])
+        self.assertIn("ВНИМАНИЕ", f.detail)
+
+    def test_removed_from_apt_log(self):
+        log = ("Start-Date: 2026-11-07  14:28:30\nCommandline: apt-get install -y cheese tlp\n"
+               "Install: tlp:amd64 (1.8.0-1)\nRemove: power-profiles-daemon:amd64 (0.30-1.1), foo:amd64 (1)\n"
+               "End-Date: 2026-11-07  14:28:35\n\nStart-Date: 2026-11-07  18:00:00\nCommandline: apt-get install -y x\n"
+               "Remove: bar:amd64 (1)\n")
+        with tempfile.NamedTemporaryFile("w", delete=False) as f:
+            f.write(log)
+        try:
+            self.assertEqual(popravi.removed_from_apt_log("2026-11-07 14:28:27", f.name), ["power-profiles-daemon", "foo"])
+        finally:
+            os.unlink(f.name)

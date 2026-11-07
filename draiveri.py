@@ -86,7 +86,7 @@ def main_gui():
                 c = Gtk.CheckButton(active=f.default)
                 v = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
                 v.append(Gtk.Label(label=f.title, xalign=0, css_classes=["name"], wrap=True))
-                v.append(Gtk.Label(label=f.detail, xalign=0, css_classes=["small"], wrap=True))
+                v.append(Gtk.Label(label=f.detail, xalign=0, css_classes=["small", "warn"] if f.removes else ["small"], wrap=True))
                 c.set_child(v)
                 self.checks.append(c)
                 lb.append(c)

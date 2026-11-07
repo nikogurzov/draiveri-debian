@@ -78,6 +78,7 @@ class Fix:
     modules: list = field(default_factory=list)
     default: bool = True
     adm: bool = False
+    removes: list = field(default_factory=list)
 
 
 def run(cmd, timeout=20):
@@ -320,8 +321,20 @@ def kernel_flavour(kernel):
     return m.group(1) if m else "amd64"
 
 
-def plan(r, flavour="amd64"):
-    """Какво може да поправи бутонът: пакети от находките, драйвер на NVIDIA, липсващи инструменти."""
+def plan(r, flavour="amd64", removes=lambda pkgs: []):
+    """Какво може да поправи бутонът: пакети от находките, драйвер на NVIDIA, липсващи инструменти.
+    removes(пакети) казва какво ще махне apt; такива поправки са без отметка и с предупреждение."""
+    fixes = _plan(r, flavour)
+    for f in fixes:
+        gone = [p for p in removes(f.packages) if p not in f.packages] if f.packages else []
+        if gone:
+            f.default = False
+            f.removes = gone
+            f.detail += f". ВНИМАНИЕ: ще махне {', '.join(gone)}"
+    return fixes
+
+
+def _plan(r, flavour):
     fixes = []
     for f in r.findings:
         if f.package and f.level in (WARN, INFO):
@@ -366,7 +379,25 @@ def fix_command(fixes, helper):
 
 
 NO_LOG = "Нямам достъп до дневника на ядрото, затова не виждам липсващ фърмуер. Поправката „Достъп до дневника“ го оправя."
+RELOGIN = "Вече си в групата adm, но това важи след излизане и влизане отново в системата. Дотогава не виждам липсващия фърмуер."
 ISTORIA = "/var/lib/draiveri/istoria.json"
+
+
+def adm_pending():
+    """Потребителят е добавен в adm, но текущата сесия още е със старите групи."""
+    import grp
+    import getpass
+    try:
+        g = grp.getgrnam("adm")
+    except KeyError:
+        return False
+    return getpass.getuser() in g.gr_mem and g.gr_gid not in os.getgroups()
+
+
+def would_remove(pkgs):
+    """Какво ще махне apt, ако инсталираме тези пакети (симулация, без root)."""
+    out = run(["apt-get", "-s", "install", *pkgs], 30) or ""
+    return [m.group(1) for m in re.finditer(r"^Remv (\S+)", out, re.M)]
 
 
 def history(path=ISTORIA):
@@ -416,7 +447,7 @@ def collect(progress=lambda s: None, deep=False):
     if not (log or "").strip():
         log = run(["dmesg"])
     if not (log or "").strip():         # без групата adm journalctl връща празно, без грешка
-        r.limits.append(NO_LOG)
+        r.limits.append(RELOGIN if adm_pending() else NO_LOG)
     else:
         found += firmware_findings(parse_firmware_log(log), installed)
 
@@ -441,7 +472,7 @@ def collect(progress=lambda s: None, deep=False):
             found += isenkram_findings(isen.split(), installed)
 
     r.findings = summary_findings(r.devices, found)
-    r.fixes = plan(r, kernel_flavour(r.kernel))
+    r.fixes = plan(r, kernel_flavour(r.kernel), would_remove)
     r.history = history()
     return r
 

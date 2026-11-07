@@ -80,7 +80,7 @@ def in_group(user, group="adm"):
 
 
 def fix(comps, pkgs, mods, adm):
-    entry = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "backup": "", "packages": [], "adm": ""}
+    entry = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "backup": "", "packages": [], "removed": [], "adm": ""}
     if comps:
         say("== Включвам в изворите: " + " ".join(comps))
         backup = f"{BACKUPS}/{time.strftime('%Y%m%d-%H%M%S')}"
@@ -111,20 +111,44 @@ def fix(comps, pkgs, mods, adm):
                 raise SystemExit("apt-get update не успя. Провери интернета.")
             say("== apt-get install " + " ".join(pkgs))
             r = subprocess.run(["apt-get", "install", "-y", *pkgs], env=ENV)
-            entry["packages"] = sorted(installed() - before)        # с всички зависимости: точно каквото е добавено
+            after = installed()
+            entry["packages"] = sorted(after - before)        # с всички зависимости: точно каквото е добавено
+            entry["removed"] = sorted(before - after)          # apt маха конфликтни пакети (tlp маха power-profiles-daemon)
             if r.returncode != 0:
                 raise SystemExit("Инсталирането не успя (виж по-горе).")
             if entry["packages"]:
                 say("   Нови пакети: " + " ".join(entry["packages"]))
+            if entry["removed"]:
+                say("   apt махна: " + " ".join(entry["removed"]) + " (при „Върни“ се слагат обратно)")
         elif comps:
             subprocess.run(["apt-get", "update"], env=ENV)
     finally:
-        if entry["backup"] or entry["packages"] or entry["adm"]:
+        if entry["backup"] or entry["packages"] or entry["removed"] or entry["adm"]:
             save_history(load_history() + [entry])
     for m in mods:
         say(f"== modprobe {m}")
         subprocess.run(["modprobe", m])
     say("== ГОТОВО. Рестартирай компютъра, за да се заредят новите драйвери." if pkgs else "== ГОТОВО.")
+
+
+def removed_from_apt_log(when, log="/var/log/apt/history.log"):
+    """За записи от по-стара версия без „removed“: какво е махнал apt при тази поправка (до 10 мин след нея)."""
+    try:
+        t0 = time.mktime(time.strptime(when, "%Y-%m-%d %H:%M:%S"))
+        text = open(log, errors="replace").read()
+    except (OSError, ValueError):
+        return []
+    out = []
+    for block in text.split("\n\n"):
+        m = re.search(r"Start-Date: (\S+)\s+(\S+)", block)
+        if not m or "Commandline: apt-get install -y" not in block:
+            continue
+        t = time.mktime(time.strptime(m.group(1) + " " + m.group(2), "%Y-%m-%d %H:%M:%S"))
+        if 0 <= t - t0 <= 600:
+            for line in block.splitlines():
+                if line.startswith("Remove: "):
+                    out += [x.split(":")[0].strip() for x in re.split(r"\),\s*", line[8:]) if x.strip()]
+    return out
 
 
 def reset():
@@ -134,6 +158,10 @@ def reset():
         return
     now = installed()
     pkgs = sorted({p for e in h for p in e.get("packages", []) if p in now})
+    back = []
+    for e in h:
+        rem = e["removed"] if "removed" in e else removed_from_apt_log(e.get("time", "")) if e.get("packages") else []
+        back += [p for p in rem if p not in back and p not in pkgs]
     if pkgs:
         say("== Махам пакетите, сложени от програмата: " + " ".join(pkgs))
         if subprocess.run(["apt-get", "purge", "-y", *pkgs], env=ENV).returncode != 0:
@@ -149,6 +177,11 @@ def reset():
             subprocess.run(["gpasswd", "-d", e["adm"], "adm"])
             say(f"== {e['adm']} е изваден от групата adm")
     subprocess.run(["apt-get", "update"], env=ENV)
+    back = [p for p in back if p not in installed()]
+    if back:
+        say("== Слагам обратно махнатото: " + " ".join(back))
+        if subprocess.run(["apt-get", "install", "-y", *back], env=ENV).returncode != 0:
+            say("   Не успях да ги сложа обратно. Пусни: sudo apt install " + " ".join(back))
     os.replace(ISTORIA, ISTORIA.replace(".json", f"-vrnato-{time.strftime('%Y%m%d-%H%M%S')}.json"))
     say("== ГОТОВО. Всичко е както преди програмата. Рестартирай компютъра.")
 

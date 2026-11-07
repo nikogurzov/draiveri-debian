@@ -1,0 +1,15 @@
+Package: draiveri
+Version: @VERSION@
+Section: admin
+Priority: optional
+Architecture: all
+Installed-Size: @SIZE@
+Depends: python3 (>= 3.9), python3-gi, gir1.2-gtk-4.0, pciutils, kmod, pkexec | policykit-1
+Recommends: isenkram-cli
+Maintainer: Nikolay Gurzov <351854558+nikogurzov@users.noreply.github.com>
+Homepage: https://github.com/nikogurzov/draiveri-debian
+Description: проверка, търсене и инсталиране на драйвери за Debian
+ След нова инсталация проверява кои драйвери и кой фърмуер липсват,
+ намира правилните пакети за хардуера (modalias, isenkram, nvidia-detect),
+ инсталира ги с едно натискане и може да върне всичко както е било.
+ Check, find and install drivers and firmware on Debian, with undo.

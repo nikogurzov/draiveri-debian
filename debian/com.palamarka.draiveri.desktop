@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Драйвери
+Name[en]=Drivers
+Comment=Проверка, търсене и инсталиране на драйвери
+Comment[en]=Check, find and install drivers on Debian
+Exec=/usr/bin/draiveri
+Icon=preferences-system
+Terminal=false
+Categories=System;Settings;HardwareSettings;
+StartupWMClass=com.palamarka.draiveri

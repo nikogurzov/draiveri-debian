@@ -90,12 +90,19 @@ class Plan(unittest.TestCase):
         self.assertEqual(cmd[-1], "--adm")
         self.assertEqual(popravi.args(cmd[4:])[3], {"--adm"})
 
-    def test_nvidia_on_nouveau_is_optional(self):
-        r = report([j.Finding(j.INFO, "Видеокарта NVIDIA", "nouveau")])
+    def test_nvidia_supported_card(self):
+        r = report([j.Finding(j.INFO, "Видеокарта NVIDIA", "nouveau", nvidia="nvidia-driver")])
         f, = j.plan(r, j.kernel_flavour(r.kernel))
         self.assertFalse(f.default)
-        self.assertEqual(f.packages[0], "linux-headers-amd64")
+        self.assertEqual(f.packages, ["linux-headers-amd64", "nvidia-driver", "nvidia-kernel-dkms", "firmware-misc-nonfree"])
         self.assertEqual(f.components, ["contrib", "non-free", "non-free-firmware"])
+
+    def test_nvidia_detect_missing(self):
+        f, = j.plan(report([j.Finding(j.WARN, "Видеокарта NVIDIA", "…", nvidia="?")]))
+        self.assertEqual((f.packages, f.default), (["nvidia-detect"], True))
+
+    def test_nvidia_too_old_no_fix(self):
+        self.assertEqual(j.plan(report([j.Finding(j.INFO, "Видеокарта NVIDIA", "…", nvidia="")])), [])
 
     def test_module_fix(self):
         r = report([j.Finding(j.WARN, "Драйвер за X", "…", "", "rtw89_8852ce")])
@@ -105,6 +112,27 @@ class Plan(unittest.TestCase):
     def test_kernel_flavour(self):
         self.assertEqual(j.kernel_flavour("7.1.13+deb13-amd64"), "amd64")
         self.assertEqual(j.kernel_flavour("6.12.48+deb13-rt-amd64"), "rt-amd64")
+
+
+Y500 = j.Device("PCI", "VGA compatible controller", "NVIDIA Corporation GK107M [GeForce GT 650M]", "nouveau")
+
+
+class Gpu(unittest.TestCase):
+    def test_kepler_unsupported(self):
+        out = ("Detected NVIDIA GPUs:\n01:00.0 3D controller [0302]: NVIDIA Corporation GK107M [GeForce GT 650M] [10de:0fd1]\n\n"
+               "Checking card:  NVIDIA Corporation GK107M [GeForce GT 650M] (rev a1)\n"
+               "Uh oh. Your card is only supported by the 470 legacy drivers series, which is not available in this Debian release.\n")
+        f, = j.gpu_findings([Y500], "", set(), out)
+        self.assertEqual((f.level, f.nvidia), (j.INFO, ""))
+        self.assertIn("твърде стара", f.detail)
+
+    def test_recommended(self):
+        out = "Checking card: ...\nYour card is supported by all driver versions.\nIt is recommended to install the\n    nvidia-driver\npackage.\n"
+        self.assertEqual(j.parse_nvidia_detect(out), "nvidia-driver")
+        self.assertEqual(j.gpu_findings([Y500], "", set(), out)[0].nvidia, "nvidia-driver")
+
+    def test_tool_missing(self):
+        self.assertEqual(j.gpu_findings([Y500], "", set(), None)[0].nvidia, "?")
 
 
 class Search(unittest.TestCase):

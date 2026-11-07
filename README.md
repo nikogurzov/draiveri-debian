@@ -6,15 +6,17 @@
 
 ## Инсталиране
 
+Свали `draiveri_*_all.deb` от [Releases](https://github.com/nikogurzov/draiveri-debian/releases) и го инсталирай с двоен клик или:
+
 ```sh
-git clone https://github.com/nikogurzov/draiveri-debian.git
-cd draiveri-debian
-sudo ./install.sh          # на чиста Debian без sudo:  su -c ./install.sh
+sudo apt install ./draiveri_0.5.0_all.deb     # на чиста Debian без sudo:  su -c "apt install ./draiveri_0.5.0_all.deb"
 ```
 
-Обновяване: `git pull && sudo ./install.sh`.
+apt слага сам и нужното (GTK 4, pciutils, pkexec, isenkram-cli). „Драйвери“ се появява в менюто, а в терминала е `draiveri`. Махане: `sudo apt remove draiveri` (а инсталираното от програмата се маха преди това с „Върни“).
 
-Инсталаторът слага каквото липсва (python3-gi, gir1.2-gtk-4.0, pciutils, pkexec), копира програмата в `/opt/draiveri` и добавя „Драйвери“ в менюто.
+От изходния код: `./build-deb.sh` прави пакета в `dist/`. Има и `sudo ./install.sh`, без пакет.
+
+Версия 0.5, в разработка: тествана на ASUS TUF (AMD + NVIDIA RTX 5070, Debian 13).
 
 ## Как работи
 
@@ -32,7 +34,7 @@ sudo ./install.sh          # на чиста Debian без sudo:  su -c ./instal
 - липсващ фърмуер (`firmware-iwlwifi`, `firmware-realtek`, `firmware-amd-graphics`, `firmware-sof-signed` и др.);
 - `intel-microcode` / `amd64-microcode`;
 - драйвер от ядрото, който не е зареден;
-- драйвера на NVIDIA (`nvidia-driver`, не е отметнат по подразбиране; при Secure Boot след рестарт се потвърждава ключ);
+- драйвера на NVIDIA: какъв точно казва `nvidia-detect` (инструментът на Debian). За стари карти, които новият драйвер не поддържа, не предлага нищо и остава nouveau. Не е отметнат по подразбиране; при Secure Boot след рестарт се потвърждава ключ;
 - достъп до дневника на ядрото (групата `adm`), за да се вижда липсващият фърмуер.
 
 „Върни“ не маха ядрото, с което работиш в момента: стартирай със старото от менюто при стартиране и натисни „Върни“ пак.

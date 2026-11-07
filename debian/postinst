@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+# старото копие от install.sh (/opt/draiveri) иначе засенчва новото в PATH
+if [ "$1" = configure ]; then
+    if [ -L /usr/local/bin/draiveri ] && [ "$(readlink /usr/local/bin/draiveri)" = /opt/draiveri/draiveri.py ]; then
+        rm -f /usr/local/bin/draiveri
+    fi
+    if [ -f /opt/draiveri/jezgro.py ] && [ -f /opt/draiveri/popravi.py ]; then
+        rm -rf /opt/draiveri
+    fi
+fi
+exit 0

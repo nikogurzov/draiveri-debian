@@ -14,7 +14,7 @@ import subprocess
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 import izvori
 
 PKG = re.compile(r"^[a-z0-9][a-z0-9+.-]{1,80}$")
@@ -93,8 +93,9 @@ def ensure_backports(entry):
     """Ако backports не е в изворите, добавя го в отделен файл (при „Върни“ файлът се трие)."""
     cn = codename()
     for f in izvori.files():
-        if f"{cn}-backports" in open(f, errors="replace").read():
-            return cn
+        with open(f, errors="replace") as h:
+            if f"{cn}-backports" in h.read():
+                return cn
     with open(BPO_FILE, "w") as h:
         h.write(f"Types: deb\nURIs: http://deb.debian.org/debian/\nSuites: {cn}-backports\nComponents: main non-free-firmware\n"
                 "Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg\n")
@@ -183,7 +184,8 @@ def removed_from_apt_log(when, log="/var/log/apt/history.log"):
     """За записи от по-стара версия без „removed“: какво е махнал apt при тази поправка (до 10 мин след нея)."""
     try:
         t0 = time.mktime(time.strptime(when, "%Y-%m-%d %H:%M:%S"))
-        text = open(log, errors="replace").read()
+        with open(log, errors="replace") as h:
+            text = h.read()
     except (OSError, ValueError):
         return []
     out = []
@@ -220,7 +222,9 @@ def reset():
     for e in reversed(h):            # най-старото копие се връща последно: то е състоянието преди програмата
         b = e.get("backup")
         if b and os.path.exists(b + "/MAP"):
-            for line in open(b + "/MAP"):
+            with open(b + "/MAP") as mp:
+                lines = mp.read().splitlines()
+            for line in lines:
                 name, dest = line.rstrip("\n").split("\t")
                 shutil.copy2(os.path.join(b, name), dest)
                 say(f"== Върнат е старият {dest}")

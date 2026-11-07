@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 
 import izvori
 
+VERSION = "0.5.0"
+
 ENV = dict(os.environ, LC_ALL="C", PATH=os.environ.get("PATH", "") + ":/usr/sbin:/sbin")
 
 OK, INFO, WARN = "ok", "info", "warn"
@@ -51,6 +53,7 @@ class Finding:
     detail: str
     package: str = ""
     module: str = ""
+    nvidia: str = ""     # за видеокартата: пакетът, който nvidia-detect препоръчва; "?" = nvidia-detect липсва
 
 
 @dataclass
@@ -261,7 +264,18 @@ def firmware_findings(names, installed, exists=firmware_present):
     return out
 
 
-def gpu_findings(devices, smi_version, loaded):
+def parse_nvidia_detect(text):
+    """Изходът на nvidia-detect -> препоръчан пакет, "" ако картата не се поддържа, None ако не е ясно."""
+    m = re.search(r"recommended to install the\s+(\S+)\s+package", text or "")
+    if m:
+        return m.group(1)
+    if re.search(r"not supported|not available|Uh oh|No NVIDIA GPU", text or "", re.I):
+        return ""
+    return None
+
+
+def gpu_findings(devices, smi_version, loaded, detect=None):
+    """detect: изходът на nvidia-detect (None = инструментът липсва)."""
     out = []
     for d in devices:
         if d.bus != "PCI" or not re.search(r"vga|3d|display", d.kind, re.I) or "nvidia" not in d.name.lower():
@@ -269,10 +283,17 @@ def gpu_findings(devices, smi_version, loaded):
         if d.driver == "nvidia":
             v = f", версия {smi_version}" if smi_version else ""
             out.append(Finding(OK, "Видеокарта NVIDIA", f"Работи с драйвера на NVIDIA{v}."))
-        elif d.driver == "nouveau":
-            out.append(Finding(INFO, "Видеокарта NVIDIA", "Работи със свободния драйвер nouveau. За игри и изчисления обикновено е по-добър драйверът на NVIDIA."))
         else:
-            out.append(Finding(WARN, "Видеокарта NVIDIA", "Няма зареден драйвер за картата."))
+            rec = parse_nvidia_detect(detect) if detect is not None else "?"
+            lvl, text = (INFO, "Работи със свободния драйвер nouveau.") if d.driver == "nouveau" else (WARN, "Няма зареден драйвер за картата.")
+            if rec == "":
+                text += " Картата е твърде стара за драйвера на NVIDIA в тази версия на Debian, затова остава nouveau."
+                lvl = INFO
+            elif rec == "?":
+                text += " Кой драйвер на NVIDIA е за нея ще каже nvidia-detect."
+            elif rec:
+                text += f" Подходящият драйвер на NVIDIA за нея е {rec}."
+            out.append(Finding(lvl, "Видеокарта NVIDIA", text, nvidia=rec or ""))
         break
     return out
 
@@ -345,7 +366,7 @@ def plan(r, flavour="amd64", removes=lambda pkgs: []):
 def _plan(r, flavour):
     fixes = []
     for f in r.findings:
-        if f.package and f.level in (WARN, INFO):
+        if f.package and f.level in (WARN, INFO) and not f.nvidia:
             comps = ["non-free-firmware"] if NONFREE.match(f.package) else []
             fixes.append(Fix(f.title, f"Инсталира {f.package}", [f.package], comps, default=f.level == WARN))
             continue
@@ -360,10 +381,15 @@ def _plan(r, flavour):
     if any("lspci" in x for x in r.limits):
         fixes.append(Fix("Инструментът lspci", "Инсталира pciutils, за да се виждат вътрешните устройства", ["pciutils"]))
     for f in r.findings:
-        if f.title == "Видеокарта NVIDIA" and f.level != OK:
-            fixes.append(Fix("Драйверът на NVIDIA", "Инсталира официалния драйвер (nvidia-driver). При Secure Boot ще поиска потвърждение на ключ след рестарт.",
-                             [f"linux-headers-{flavour}", "nvidia-kernel-dkms", "nvidia-driver", "firmware-misc-nonfree"],
-                             ["contrib", "non-free", "non-free-firmware"], default=False))
+        if f.title != "Видеокарта NVIDIA" or f.level == OK or not f.nvidia:
+            continue
+        if f.nvidia == "?":
+            fixes.append(Fix("Кой драйвер е за видеокартата", "Инсталира nvidia-detect: инструментът на Debian, който казва дали картата се поддържа. После натисни „Намери драйвери“.",
+                             ["nvidia-detect"], ["contrib", "non-free"], default=f.level == WARN))
+        else:
+            extra = ["nvidia-kernel-dkms", "firmware-misc-nonfree"] if f.nvidia == "nvidia-driver" else []
+            fixes.append(Fix(f"Драйверът на NVIDIA ({f.nvidia})", "Препоръчан от nvidia-detect за тази карта. При Secure Boot ще поиска потвърждение на ключ след рестарт.",
+                             [f"linux-headers-{flavour}", f.nvidia] + extra, ["contrib", "non-free", "non-free-firmware"], default=False))
     return fixes
 
 
@@ -524,7 +550,10 @@ def collect(progress=lambda s: None, deep=False):
         found += firmware_findings(parse_firmware_log(log), installed)
 
     smi = run(["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"], 10)
-    found += gpu_findings(r.devices, (smi or "").strip().splitlines()[0] if smi and smi.strip() else "", {m.name for m in r.modules})
+    det = None
+    if any("nvidia" in d.name.lower() and d.driver != "nvidia" and re.search(r"vga|3d|display", d.kind, re.I) for d in r.devices):
+        det = run(["nvidia-detect"], 20)
+    found += gpu_findings(r.devices, (smi or "").strip().splitlines()[0] if smi and smi.strip() else "", {m.name for m in r.modules}, det)
     found += microcode_findings(read_file("/proc/cpuinfo"), installed)
 
     r.components = izvori.enabled()

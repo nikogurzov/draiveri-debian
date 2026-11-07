@@ -12,7 +12,7 @@ import subprocess
 import sys
 import threading
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.realpath(__file__))   # realpath: командата draiveri е символна връзка
 sys.path.insert(0, HERE)
 import jezgro
 
@@ -318,7 +318,9 @@ def main_gui():
 
 
 if __name__ == "__main__":
-    if "--fix" in sys.argv:
+    if "--version" in sys.argv:
+        print("draiveri", jezgro.VERSION)
+    elif "--fix" in sys.argv:
         main_fix()
     elif "--reset" in sys.argv:
         main_reset()

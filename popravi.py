@@ -30,7 +30,7 @@ def args(argv):
         if argv[i] in got and i + 1 < len(argv):
             got[argv[i]].append(argv[i + 1])
             i += 2
-        elif argv[i] in ("--adm", "--reset"):
+        elif argv[i] in ("--adm", "--reset", "--backports"):
             flags.add(argv[i])
             i += 1
         else:
@@ -79,7 +79,49 @@ def in_group(user, group="adm"):
     return group in subprocess.run(["id", "-nG", user], capture_output=True, text=True).stdout.split()
 
 
-def fix(comps, pkgs, mods, adm):
+def codename():
+    for line in open("/etc/os-release"):
+        if line.startswith("VERSION_CODENAME="):
+            return line.split("=", 1)[1].strip().strip('"')
+    return ""
+
+
+BPO_FILE = "/etc/apt/sources.list.d/draiveri-backports.sources"
+
+
+def ensure_backports(entry):
+    """Ако backports не е в изворите, добавя го в отделен файл (при „Върни“ файлът се трие)."""
+    cn = codename()
+    for f in izvori.files():
+        if f"{cn}-backports" in open(f, errors="replace").read():
+            return cn
+    with open(BPO_FILE, "w") as h:
+        h.write(f"Types: deb\nURIs: http://deb.debian.org/debian/\nSuites: {cn}-backports\nComponents: main non-free-firmware\n"
+                "Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg\n")
+    entry["added_files"] = [BPO_FILE]
+    say(f"== Добавих {cn}-backports в изворите ({BPO_FILE})")
+    return cn
+
+
+def dkms_check(images):
+    """След ново ядро: има ли за него всички DKMS драйвери (NVIDIA и др.), които има текущото."""
+    run = os.uname().release
+    def mods(k):
+        out = subprocess.run(["dkms", "status", "-k", k], capture_output=True, text=True).stdout if shutil.which("dkms") else ""
+        return {l.split(",")[0].split("/")[0].strip() for l in out.splitlines() if l.strip().endswith("installed")}
+    need, ok = mods(run), True
+    for img in images:
+        k = img[len("linux-image-"):]
+        miss = need - mods(k)
+        if miss:
+            ok = False
+            say(f"!! НЕ РЕСТАРТИРАЙ: за ядро {k} липсват драйверите: {', '.join(sorted(miss))}. Натисни „Върни“.")
+        else:
+            say(f"== Ядро {k}: всички драйвери са готови" + (f" ({', '.join(sorted(need))})" if need else "") + ".")
+    return ok
+
+
+def fix(comps, pkgs, mods, adm, backports=False):
     entry = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "backup": "", "packages": [], "removed": [], "adm": ""}
     if comps:
         say("== Включвам в изворите: " + " ".join(comps))
@@ -109,8 +151,11 @@ def fix(comps, pkgs, mods, adm):
             say("== apt-get update")
             if subprocess.run(["apt-get", "update"], env=ENV).returncode != 0:
                 raise SystemExit("apt-get update не успя. Провери интернета.")
-            say("== apt-get install " + " ".join(pkgs))
-            r = subprocess.run(["apt-get", "install", "-y", *pkgs], env=ENV)
+            target = ["-t", f"{ensure_backports(entry)}-backports"] if backports else []
+            if backports:
+                subprocess.run(["apt-get", "update"], env=ENV)
+            say("== apt-get install " + " ".join(target + pkgs))
+            r = subprocess.run(["apt-get", "install", "-y", *target, *pkgs], env=ENV)
             after = installed()
             entry["packages"] = sorted(after - before)        # с всички зависимости: точно каквото е добавено
             entry["removed"] = sorted(before - after)          # apt маха конфликтни пакети (tlp маха power-profiles-daemon)
@@ -123,8 +168,11 @@ def fix(comps, pkgs, mods, adm):
         elif comps:
             subprocess.run(["apt-get", "update"], env=ENV)
     finally:
-        if entry["backup"] or entry["packages"] or entry["removed"] or entry["adm"]:
+        if entry["backup"] or entry["packages"] or entry["removed"] or entry["adm"] or entry.get("added_files"):
             save_history(load_history() + [entry])
+    images = [p for p in pkgs if re.match(r"linux-image-\d", p)]
+    if images and not dkms_check(images):
+        return
     for m in mods:
         say(f"== modprobe {m}")
         subprocess.run(["modprobe", m])
@@ -157,7 +205,10 @@ def reset():
         say("Програмата не е променяла нищо. Няма какво да връщам.")
         return
     now = installed()
-    pkgs = sorted({p for e in h for p in e.get("packages", []) if p in now})
+    kver = os.uname().release          # работещото ядро не се маха
+    pkgs = sorted({p for e in h for p in e.get("packages", []) if p in now and not p.endswith(kver)})
+    if any(p.endswith(kver) for e in h for p in e.get("packages", [])):
+        say(f"!! Работиш с ядро {kver}, сложено от програмата. Него не махам: стартирай със старото и пусни „Върни“ пак.")
     back = []
     for e in h:
         rem = e["removed"] if "removed" in e else removed_from_apt_log(e.get("time", "")) if e.get("packages") else []
@@ -173,6 +224,10 @@ def reset():
                 name, dest = line.rstrip("\n").split("\t")
                 shutil.copy2(os.path.join(b, name), dest)
                 say(f"== Върнат е старият {dest}")
+        for f in e.get("added_files", []):
+            if os.path.exists(f):
+                os.remove(f)
+                say(f"== Изтрит {f}")
         if e.get("adm"):
             subprocess.run(["gpasswd", "-d", e["adm"], "adm"])
             say(f"== {e['adm']} е изваден от групата adm")
@@ -182,7 +237,13 @@ def reset():
         say("== Слагам обратно махнатото: " + " ".join(back))
         if subprocess.run(["apt-get", "install", "-y", *back], env=ENV).returncode != 0:
             say("   Не успях да ги сложа обратно. Пусни: sudo apt install " + " ".join(back))
-    os.replace(ISTORIA, ISTORIA.replace(".json", f"-vrnato-{time.strftime('%Y%m%d-%H%M%S')}.json"))
+    keep = sorted({p for e in h for p in e.get("packages", []) if p.endswith(kver) and p in now})
+    shutil.copy2(ISTORIA, ISTORIA.replace(".json", f"-vrnato-{time.strftime('%Y%m%d-%H%M%S')}.json"))
+    if keep:      # работещото ядро остава за следващото „Върни“, от старото ядро
+        save_history([{"time": time.strftime("%Y-%m-%d %H:%M:%S"), "backup": "", "packages": keep, "removed": [], "adm": ""}])
+        say("== Остава само: " + " ".join(keep) + ". Стартирай със старото ядро и натисни „Върни“ пак.")
+        return
+    os.remove(ISTORIA)
     say("== ГОТОВО. Всичко е както преди програмата. Рестартирай компютъра.")
 
 
@@ -193,7 +254,7 @@ def main():
     if "--reset" in flags:
         reset()
     else:
-        fix(comps, pkgs, mods, "--adm" in flags)
+        fix(comps, pkgs, mods, "--adm" in flags, "--backports" in flags)
 
 
 if __name__ == "__main__":

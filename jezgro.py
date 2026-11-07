@@ -79,6 +79,14 @@ class Fix:
     default: bool = True
     adm: bool = False
     removes: list = field(default_factory=list)
+    backports: bool = False      # инсталира от <codename>-backports (ново ядро)
+
+
+@dataclass
+class Kernels:
+    running: str = ""
+    installed: list = field(default_factory=list)     # версии, напр. 7.1.13+deb13-amd64
+    options: list = field(default_factory=list)       # Fix за всяко по-ново ядро
 
 
 def run(cmd, timeout=20):
@@ -375,7 +383,71 @@ def fix_command(fixes, helper):
         cmd += ["--mod", m]
     if any(f.adm for f in fixes):
         cmd.append("--adm")
+    if any(f.backports for f in fixes):
+        cmd.append("--backports")
     return cmd
+
+
+# ---------- ядрото Linux ----------
+def parse_policy(text):
+    """apt-cache policy -> [(версия, от backports ли е)] само за версиите, които могат да се свалят."""
+    out, cur, srcs = [], None, []
+    for line in text.splitlines():
+        m = re.match(r"^\s+(?:\*\*\*\s+)?(\S+)\s+-?\d+$", line)
+        if m:
+            if cur and any("http" in x or "file:" in x for x in srcs):
+                out.append((cur, any("-backports" in x for x in srcs)))
+            cur, srcs = m.group(1), []
+        elif cur and line.startswith("        "):
+            srcs.append(line)
+    if cur and any("http" in x or "file:" in x for x in srcs):
+        out.append((cur, any("-backports" in x for x in srcs)))
+    return out
+
+
+def vkey(v):
+    """Ключ за сравняване на версии на ядро: 7.2.11-1~bpo13+1 -> (7, 2, 11)."""
+    return tuple(int(x) for x in re.findall(r"\d+", v.split("-")[0])[:3])
+
+
+def kernel_options(running, installed, policy, resolve, flavour="amd64"):
+    """По едно предложение: най-новото от backports и най-новото стабилно, ако са по-нови от инсталираното."""
+    top = max((vkey(v) for v in installed), default=())
+    out = []
+    for bpo, label, note in ((True, "от backports", "По-ново ядро за нов хардуер, по-малко тествано от стабилното."),
+                             (False, "стабилно", "Официалното стабилно ядро на Debian с последните поправки.")):
+        cands = sorted((v for v, b in policy if b == bpo), key=vkey, reverse=True)
+        if not cands:
+            continue
+        img, hdr = resolve(cands[0])
+        if not img or img[len("linux-image-"):] in installed or vkey(cands[0]) <= top and bpo:
+            continue
+        ver = img[len("linux-image-"):]
+        out.append(Fix(f"Ядро Linux {ver.split('+')[0]} ({label})",
+                       f"{note} Старото ядро остава в менюто при стартиране. Преди рестарт проверявам NVIDIA и другите DKMS драйвери.",
+                       [img] + ([hdr] if hdr else []), default=False, backports=bpo))
+    return out
+
+
+def resolve_meta(version, flavour="amd64"):
+    """Версия на linux-image-<flavour> -> (linux-image-X, linux-headers-X): точните пакети, без мета-пакета,
+    за да не започне ядрото да се обновява само."""
+    def dep(meta):
+        out = run(["apt-cache", "depends", f"{meta}-{flavour}={version}"], 15) or ""
+        m = re.search(rf"Depends: ({meta}-\d\S+)", out)
+        return m.group(1) if m else ""
+    return dep("linux-image"), dep("linux-headers")
+
+
+def kernels():
+    k = Kernels(running=(run(["uname", "-r"]) or "").strip())
+    flavour = kernel_flavour(k.running)
+    pk = run(["dpkg-query", "-W", "-f=${Package}\t${db:Status-Abbrev}\n", "linux-image-*"]) or ""
+    k.installed = sorted((l.split("\t")[0][len("linux-image-"):] for l in pk.splitlines()
+                          if re.match(r"linux-image-\d", l) and "\tii" in l), key=vkey)
+    pol = run(["apt-cache", "policy", f"linux-image-{flavour}"], 20) or ""
+    k.options = kernel_options(k.running, k.installed, parse_policy(pol), lambda v: resolve_meta(v, flavour), flavour)
+    return k
 
 
 NO_LOG = "Нямам достъп до дневника на ядрото, затова не виждам липсващ фърмуер. Поправката „Достъп до дневника“ го оправя."

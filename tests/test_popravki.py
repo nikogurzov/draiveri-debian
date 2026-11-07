@@ -210,3 +210,65 @@ class Conflicts(unittest.TestCase):
             self.assertEqual(popravi.removed_from_apt_log("2026-11-07 14:28:27", f.name), ["power-profiles-daemon", "foo"])
         finally:
             os.unlink(f.name)
+
+
+POLICY = """linux-image-amd64:
+  Installed: (none)
+  Candidate: 6.12.115-2
+  Version table:
+     7.2.11-1~bpo13+1 100
+        100 http://ftp.bg.debian.org/debian trixie-backports/main amd64 Packages
+     7.1.13-1~bpo13+1 -1
+        100 /var/lib/dpkg/status
+     6.12.115-2 500
+        500 http://security.debian.org/debian-security trixie-security/main amd64 Packages
+     6.12.94-1 500
+        500 http://ftp.bg.debian.org/debian trixie/main amd64 Packages
+"""
+
+
+def fake_resolve(v):
+    abi = v.split("-")[0] + "+deb13"
+    return f"linux-image-{abi}-amd64", f"linux-headers-{abi}-amd64"
+
+
+class Kernel(unittest.TestCase):
+    def test_parse_policy_skips_status_only(self):
+        self.assertEqual(j.parse_policy(POLICY), [("7.2.11-1~bpo13+1", True), ("6.12.115-2", False), ("6.12.94-1", False)])
+
+    def test_options_newer_backports_and_stable(self):
+        opts = j.kernel_options("7.1.13+deb13-amd64", ["6.12.111+deb13-amd64", "7.1.13+deb13-amd64"], j.parse_policy(POLICY), fake_resolve)
+        self.assertEqual([(f.packages[0], f.backports, f.default) for f in opts],
+                         [("linux-image-7.2.11+deb13-amd64", True, False), ("linux-image-6.12.115+deb13-amd64", False, False)])
+        self.assertEqual(j.fix_command(opts[:1], "/x")[-1], "--backports")
+        self.assertEqual(popravi.args(j.fix_command(opts[:1], "/x")[4:])[3], {"--backports"})
+
+    def test_nothing_when_already_installed(self):
+        inst = ["6.12.115+deb13-amd64", "7.2.11+deb13-amd64"]
+        self.assertEqual(j.kernel_options("7.2.11+deb13-amd64", inst, j.parse_policy(POLICY), fake_resolve), [])
+
+    def test_vkey(self):
+        self.assertGreater(j.vkey("7.2.11-1~bpo13+1"), j.vkey("7.1.13+deb13-amd64"))
+        self.assertGreater(j.vkey("6.12.115"), j.vkey("6.12.94"))
+
+
+class KernelReset(unittest.TestCase):
+    def test_running_kernel_kept_for_next_reset(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            ist = d + "/istoria.json"
+            popravi.save_history([{"time": "2026-11-07 15:00:00", "backup": "", "removed": [], "adm": "",
+                                   "packages": ["linux-image-7.2.11+deb13-amd64", "linux-headers-7.2.11+deb13-amd64", "foo"],
+                                   "added_files": [d + "/bpo.sources"]}], ist)
+            open(d + "/bpo.sources", "w").write("x")
+            calls = []
+            uname = mock.Mock(release="7.2.11+deb13-amd64")
+            with mock.patch.object(popravi, "ISTORIA", ist), mock.patch.object(popravi.os, "uname", lambda: uname), \
+                 mock.patch.object(popravi, "installed", lambda: {"linux-image-7.2.11+deb13-amd64", "linux-headers-7.2.11+deb13-amd64", "foo"}), \
+                 mock.patch.object(popravi.subprocess, "run", lambda c, **k: calls.append(c) or mock.Mock(returncode=0)), \
+                 mock.patch.object(popravi, "say", lambda s: None):
+                popravi.reset()
+            self.assertIn(["apt-get", "purge", "-y", "foo"], calls)                      # работещото ядро не се пипа
+            left = popravi.load_history(ist)
+            self.assertEqual(left[0]["packages"], ["linux-headers-7.2.11+deb13-amd64", "linux-image-7.2.11+deb13-amd64"])
+            self.assertFalse(os.path.exists(d + "/bpo.sources"))

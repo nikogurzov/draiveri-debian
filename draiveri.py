@@ -4,6 +4,7 @@
    ./draiveri.py --text            проверка в терминала
    ./draiveri.py --text --search   и търсене на драйвери за устройствата
    ./draiveri.py --fix             търси и инсталира (пита преди всяко нещо)
+   ./draiveri.py --kernel          кое ядро работи и инсталиране на по-ново (по избор)
    ./draiveri.py --reset           връща всичко, направено от програмата (като фабрично)
 Проверката само чете. Нещо се променя само след „Поправи“ и паролата (pkexec)."""
 import os
@@ -35,6 +36,18 @@ def main_fix():
             chosen.append(f)
     if chosen:
         sys.exit(subprocess.run(jezgro.fix_command(chosen, HELPER)).returncode)
+
+
+def main_kernel():
+    k = jezgro.kernels()
+    print(f"Сега работи ядро {k.running}. Инсталирани: {', '.join(k.installed)}")
+    if not k.options:
+        print("Няма по-ново ядро за този компютър.")
+        return
+    for f in k.options:
+        a = input(f"{f.title}\n  {f.detail}\n  Да го инсталирам ли? [д/Н] ").strip().lower()
+        if a in ("д", "да", "y", "yes"):
+            sys.exit(subprocess.run(jezgro.fix_command([f], HELPER)).returncode)
 
 
 def main_reset():
@@ -73,12 +86,12 @@ def main_gui():
 
     class FixWin(Gtk.Window):
         """Отметки какво да се направи, после изходът от apt."""
-        def __init__(self, parent, fixes, on_done, reset=None):
-            super().__init__(transient_for=parent, modal=True, title="Върни както беше" if reset else "Поправи", default_width=640, default_height=520)
+        def __init__(self, parent, fixes, on_done, reset=None, head=None, title=None):
+            super().__init__(transient_for=parent, modal=True, title=title or ("Върни както беше" if reset else "Поправи"), default_width=640, default_height=520)
             self.on_done, self.fixes, self.reset = on_done, fixes, reset
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, margin_top=12, margin_bottom=12, margin_start=12, margin_end=12)
             self.set_child(box)
-            head = reset or "Избери какво да направя. Ще поискам паролата ти."
+            head = reset or head or "Избери какво да направя. Ще поискам паролата ти."
             box.append(Gtk.Label(label=head, xalign=0, css_classes=["name"], wrap=True))
             lb = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
             self.checks = []
@@ -99,10 +112,11 @@ def main_gui():
             bar = Gtk.Box(spacing=8, halign=Gtk.Align.END)
             self.close_b = Gtk.Button(label="Затвори")
             self.close_b.connect("clicked", lambda *_: self.close())
-            self.go = Gtk.Button(label="Върни" if reset else "Поправи", css_classes=["destructive-action" if reset else "suggested-action"])
+            self.go = Gtk.Button(label="Върни" if reset else "Инсталирай" if title else "Поправи", css_classes=["destructive-action" if reset else "suggested-action"])
             self.go.connect("clicked", self.start)
             bar.append(self.close_b)
             bar.append(self.go)
+            self.go.set_visible(bool(fixes) or bool(reset))
             box.append(bar)
             self.connect("close-request", self.closing)
             self.ran = False
@@ -154,6 +168,9 @@ def main_gui():
             self.find_b = Gtk.Button(label="Намери драйвери", tooltip_text="Търси драйвери и пакети за всяко устройство")
             self.find_b.connect("clicked", lambda *_: self.load(True))
             head.pack_start(self.find_b)
+            self.kern_b = Gtk.Button(label="Ядро Linux", tooltip_text="Кое ядро работи и има ли по-ново")
+            self.kern_b.connect("clicked", self.kernel)
+            head.pack_start(self.kern_b)
             copy = Gtk.Button(icon_name="edit-copy-symbolic", tooltip_text="Копирай всичко като текст")
             copy.connect("clicked", self.copy)
             head.pack_end(copy)
@@ -258,6 +275,23 @@ def main_gui():
             if self.report and self.report.fixes:
                 FixWin(self, self.report.fixes, lambda: self.load(self.deep)).present()
 
+        def kernel(self, *_):
+            self.kern_b.set_sensitive(False)
+
+            def work():
+                k = jezgro.kernels()
+                GLib.idle_add(show, k)
+
+            def show(k):
+                self.kern_b.set_sensitive(True)
+                inst = "\n".join(f"  • {v}" + ("  ← работи сега" if v == k.running else "") for v in k.installed)
+                text = f"Сега работи ядро {k.running}.\nИнсталирани:\n{inst}\n\n"
+                text += ("Може да се сложи (не е отметнато, избери само ако имаш нужда, например нов хардуер без драйвер):"
+                         if k.options else "Няма по-ново ядро за този компютър.")
+                FixWin(self, k.options, lambda: self.load(self.deep), head=text, title="Ядро Linux").present()
+                return False
+            threading.Thread(target=work, daemon=True).start()
+
         def undo(self, *_):
             h = self.report.history if self.report else []
             if not h:
@@ -288,6 +322,8 @@ if __name__ == "__main__":
         main_fix()
     elif "--reset" in sys.argv:
         main_reset()
+    elif "--kernel" in sys.argv:
+        main_kernel()
     elif "--text" in sys.argv:
         main_text("--search" in sys.argv)
     else:

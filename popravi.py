@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""Помощникът, който поправя и връща. Пуска се като root през pkexec от програмата:
+   pkexec /usr/bin/python3 -I popravi.py [--comp КОМПОНЕНТ]... [--pkg ПАКЕТ]... [--mod МОДУЛ]... [--adm]
+   pkexec /usr/bin/python3 -I popravi.py --reset
+Прави само това: добавя компоненти към изворите на Debian, инсталира пакети, зарежда модули и добавя
+потребителя в групата adm (за дневника на ядрото). Всяка промяна се записва в /var/lib/draiveri/istoria.json,
+старите извори се пазят в /var/backups/draiveri, и --reset връща всичко както е било преди програмата."""
+import json
+import os
+import pwd
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import izvori
+
+PKG = re.compile(r"^[a-z0-9][a-z0-9+.-]{1,80}$")
+MOD = re.compile(r"^[A-Za-z0-9_-]{1,60}$")
+ISTORIA = "/var/lib/draiveri/istoria.json"
+BACKUPS = "/var/backups/draiveri"
+ENV = dict(os.environ, DEBIAN_FRONTEND="noninteractive", LC_ALL="C.UTF-8")
+
+
+def args(argv):
+    got, flags, i = {"--comp": [], "--pkg": [], "--mod": []}, set(), 0
+    while i < len(argv):
+        if argv[i] in got and i + 1 < len(argv):
+            got[argv[i]].append(argv[i + 1])
+            i += 2
+        elif argv[i] in ("--adm", "--reset"):
+            flags.add(argv[i])
+            i += 1
+        else:
+            raise SystemExit(f"Непознат аргумент: {argv[i]}")
+    comps, pkgs, mods = got["--comp"], got["--pkg"], got["--mod"]
+    bad = [c for c in comps if c not in izvori.ALLOWED] + [p for p in pkgs if not PKG.match(p)] + [m for m in mods if not MOD.match(m)]
+    if bad:
+        raise SystemExit("Отказвам, неправилни имена: " + ", ".join(bad))
+    return comps, pkgs, mods, flags
+
+
+def say(s):
+    print(s, flush=True)
+
+
+def installed():
+    out = subprocess.run(["dpkg-query", "-W", "-f=${Package}\t${db:Status-Abbrev}\n"], capture_output=True, text=True).stdout
+    return {l.split("\t")[0] for l in out.splitlines() if "\t" in l and l.split("\t")[1].startswith("ii")}
+
+
+def load_history(path=None):
+    path = path or ISTORIA
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+
+def save_history(h, path=None):
+    path = path or ISTORIA
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path + ".tmp", "w") as f:
+        json.dump(h, f, ensure_ascii=False, indent=1)
+    os.chmod(path + ".tmp", 0o644)        # програмата го чете без парола, за да знае има ли какво да връща
+    os.replace(path + ".tmp", path)
+
+
+def caller():
+    """Потребителят, който е пуснал pkexec (не root)."""
+    uid = os.environ.get("PKEXEC_UID") or os.environ.get("SUDO_UID")
+    return pwd.getpwuid(int(uid)).pw_name if uid and uid.isdigit() and int(uid) != 0 else ""
+
+
+def in_group(user, group="adm"):
+    return group in subprocess.run(["id", "-nG", user], capture_output=True, text=True).stdout.split()
+
+
+def fix(comps, pkgs, mods, adm):
+    entry = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "backup": "", "packages": [], "adm": ""}
+    if comps:
+        say("== Включвам в изворите: " + " ".join(comps))
+        backup = f"{BACKUPS}/{time.strftime('%Y%m%d-%H%M%S')}"
+        for f in izvori.files():
+            with open(f) as h:
+                old = h.read()
+            new, changed = izvori.add(old, f.endswith(".sources"), comps)
+            if changed:
+                os.makedirs(backup, exist_ok=True)
+                shutil.copy2(f, os.path.join(backup, os.path.basename(f)))
+                with open(backup + "/MAP", "a") as m:
+                    m.write(f"{os.path.basename(f)}\t{f}\n")
+                with open(f, "w") as h:
+                    h.write(new)
+                entry["backup"] = backup
+                say(f"   {f} (старото е запазено в {backup})")
+    if adm:
+        user = caller()
+        if user and not in_group(user):
+            subprocess.run(["usermod", "-aG", "adm", user], check=True)
+            entry["adm"] = user
+            say(f"== {user} е добавен в групата adm. Важи след излизане и влизане отново.")
+    try:
+        if pkgs:
+            before = installed()
+            say("== apt-get update")
+            if subprocess.run(["apt-get", "update"], env=ENV).returncode != 0:
+                raise SystemExit("apt-get update не успя. Провери интернета.")
+            say("== apt-get install " + " ".join(pkgs))
+            r = subprocess.run(["apt-get", "install", "-y", *pkgs], env=ENV)
+            entry["packages"] = sorted(installed() - before)        # с всички зависимости: точно каквото е добавено
+            if r.returncode != 0:
+                raise SystemExit("Инсталирането не успя (виж по-горе).")
+            if entry["packages"]:
+                say("   Нови пакети: " + " ".join(entry["packages"]))
+        elif comps:
+            subprocess.run(["apt-get", "update"], env=ENV)
+    finally:
+        if entry["backup"] or entry["packages"] or entry["adm"]:
+            save_history(load_history() + [entry])
+    for m in mods:
+        say(f"== modprobe {m}")
+        subprocess.run(["modprobe", m])
+    say("== ГОТОВО. Рестартирай компютъра, за да се заредят новите драйвери." if pkgs else "== ГОТОВО.")
+
+
+def reset():
+    h = load_history()
+    if not h:
+        say("Програмата не е променяла нищо. Няма какво да връщам.")
+        return
+    now = installed()
+    pkgs = sorted({p for e in h for p in e.get("packages", []) if p in now})
+    if pkgs:
+        say("== Махам пакетите, сложени от програмата: " + " ".join(pkgs))
+        if subprocess.run(["apt-get", "purge", "-y", *pkgs], env=ENV).returncode != 0:
+            raise SystemExit("Махането не успя (виж по-горе). Нищо друго не е пипано.")
+    for e in reversed(h):            # най-старото копие се връща последно: то е състоянието преди програмата
+        b = e.get("backup")
+        if b and os.path.exists(b + "/MAP"):
+            for line in open(b + "/MAP"):
+                name, dest = line.rstrip("\n").split("\t")
+                shutil.copy2(os.path.join(b, name), dest)
+                say(f"== Върнат е старият {dest}")
+        if e.get("adm"):
+            subprocess.run(["gpasswd", "-d", e["adm"], "adm"])
+            say(f"== {e['adm']} е изваден от групата adm")
+    subprocess.run(["apt-get", "update"], env=ENV)
+    os.replace(ISTORIA, ISTORIA.replace(".json", f"-vrnato-{time.strftime('%Y%m%d-%H%M%S')}.json"))
+    say("== ГОТОВО. Всичко е както преди програмата. Рестартирай компютъра.")
+
+
+def main():
+    comps, pkgs, mods, flags = args(sys.argv[1:])
+    if os.geteuid() != 0:
+        raise SystemExit("Трябва да се пусне като root (през pkexec).")
+    if "--reset" in flags:
+        reset()
+    else:
+        fix(comps, pkgs, mods, "--adm" in flags)
+
+
+if __name__ == "__main__":
+    main()

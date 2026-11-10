@@ -3,8 +3,8 @@
    pkexec /usr/bin/python3 -I popravi.py [--comp КОМПОНЕНТ]... [--pkg ПАКЕТ]... [--mod МОДУЛ]... [--adm]
    pkexec /usr/bin/python3 -I popravi.py --reset
 Прави само това: добавя компоненти към изворите на Debian, инсталира пакети, зарежда модули и добавя
-потребителя в групата adm (за дневника на ядрото). Всяка промяна се записва в /var/lib/draiveri/istoria.json,
-старите извори се пазят в /var/backups/draiveri, и --reset връща всичко както е било преди програмата."""
+потребителя в групата adm (за дневника на ядрото). Всяка промяна се записва в /var/lib/drv-marka/istoria.json,
+старите извори се пазят в /var/backups/drv-marka, и --reset връща всичко както е било преди програмата."""
 import json
 import os
 import pwd
@@ -19,8 +19,19 @@ import izvori
 
 PKG = re.compile(r"^[a-z0-9][a-z0-9+.-]{1,80}$")
 MOD = re.compile(r"^[A-Za-z0-9_-]{1,60}$")
-ISTORIA = "/var/lib/draiveri/istoria.json"
-BACKUPS = "/var/backups/draiveri"
+ISTORIA = "/var/lib/drv-marka/istoria.json"
+BACKUPS = "/var/backups/drv-marka"
+OLD_DIRS = {"/var/lib/draiveri": "/var/lib/drv-marka", "/var/backups/draiveri": BACKUPS}   # програмата се казваше „draiveri“
+
+
+def migrate():
+    """Пренася историята и старите извори от времето, когато програмата се казваше „draiveri“ (ако новите ги няма)."""
+    for old, new in OLD_DIRS.items():
+        if os.path.isdir(old) and not os.path.exists(new):
+            try:
+                shutil.move(old, new)
+            except OSError:
+                pass
 ENV = dict(os.environ, DEBIAN_FRONTEND="noninteractive", LC_ALL="C.UTF-8")
 
 
@@ -52,6 +63,8 @@ def installed():
 
 
 def load_history(path=None):
+    if path is None:
+        migrate()
     path = path or ISTORIA
     try:
         with open(path) as f:
@@ -61,6 +74,8 @@ def load_history(path=None):
 
 
 def save_history(h, path=None):
+    if path is None:
+        migrate()
     path = path or ISTORIA
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path + ".tmp", "w") as f:
@@ -86,7 +101,7 @@ def codename():
     return ""
 
 
-BPO_FILE = "/etc/apt/sources.list.d/draiveri-backports.sources"
+BPO_FILE = "/etc/apt/sources.list.d/drv-marka-backports.sources"
 
 
 def ensure_backports(entry):

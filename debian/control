@@ -1,4 +1,4 @@
-Package: draiveri
+Package: drv-marka
 Version: @VERSION@
 Section: admin
 Priority: optional
@@ -6,8 +6,11 @@ Architecture: all
 Installed-Size: @SIZE@
 Depends: python3 (>= 3.9), python3-gi, gir1.2-gtk-4.0, pciutils, kmod, pkexec | policykit-1
 Recommends: isenkram-cli
+Provides: draiveri
+Conflicts: draiveri
+Replaces: draiveri
 Maintainer: Nikolay Gurzov <351854558+nikogurzov@users.noreply.github.com>
-Homepage: https://github.com/nikogurzov/draiveri-debian
+Homepage: https://github.com/nikogurzov/drv-marka
 Description: проверка, търсене и инсталиране на драйвери за Debian
  След нова инсталация проверява кои драйвери и кой фърмуер липсват,
  намира правилните пакети за хардуера (modalias, isenkram, nvidia-detect),

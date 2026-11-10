@@ -300,3 +300,34 @@ class KernelReset(unittest.TestCase):
             left = popravi.load_history(ist)
             self.assertEqual(left[0]["packages"], ["linux-headers-7.2.11+deb13-amd64", "linux-image-7.2.11+deb13-amd64"])
             self.assertFalse(os.path.exists(d + "/bpo.sources"))
+
+
+class TestPrenasyane(unittest.TestCase):
+    """Програмата се казваше „draiveri“: историята се пренася на новото място, без да се губи."""
+
+    def test_migrate_moves_old_history(self):
+        with tempfile.TemporaryDirectory() as d:
+            old, new = os.path.join(d, "draiveri"), os.path.join(d, "drv-marka")
+            os.makedirs(old)
+            with open(os.path.join(old, "istoria.json"), "w") as f:
+                f.write('[{"packages": ["firmware-misc-nonfree"]}]')
+            saved = popravi.OLD_DIRS
+            popravi.OLD_DIRS = {old: new}
+            try:
+                popravi.migrate()
+            finally:
+                popravi.OLD_DIRS = saved
+            self.assertFalse(os.path.exists(old))
+            self.assertEqual(popravi.load_history(os.path.join(new, "istoria.json"))[0]["packages"], ["firmware-misc-nonfree"])
+
+    def test_migrate_keeps_existing_new(self):
+        with tempfile.TemporaryDirectory() as d:
+            old, new = os.path.join(d, "draiveri"), os.path.join(d, "drv-marka")
+            os.makedirs(old); os.makedirs(new)
+            saved = popravi.OLD_DIRS
+            popravi.OLD_DIRS = {old: new}
+            try:
+                popravi.migrate()
+            finally:
+                popravi.OLD_DIRS = saved
+            self.assertTrue(os.path.exists(old))      # новото не се презаписва

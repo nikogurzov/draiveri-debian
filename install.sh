@@ -1,12 +1,12 @@
 #!/bin/sh
-# Инсталира „Драйвери“ в /opt/draiveri, с икона в менюто и команда draiveri.
+# Инсталира „Драйвери“ в /opt/drv-marka, с икона в менюто и команда drv-marka.
 #   sudo ./install.sh            инсталира (или обновява)
-#   sudo ./install.sh --remove   маха програмата (поправките се връщат преди това с draiveri --reset)
+#   sudo ./install.sh --remove   маха програмата (поправките се връщат преди това с drv-marka --reset)
 # Без sudo на чиста Debian: su -c ./install.sh
 set -e
-DEST=/opt/draiveri
-APP=/usr/share/applications/com.palamarka.draiveri.desktop
-BIN=/usr/local/bin/draiveri
+DEST=/opt/drv-marka
+APP=/usr/share/applications/com.palamarka.drvmarka.desktop
+BIN=/usr/local/bin/drv-marka
 
 if [ "$(id -u)" != 0 ]; then
     echo "Пусни ме като root:  sudo ./install.sh   (или  su -c ./install.sh)"
@@ -14,11 +14,11 @@ if [ "$(id -u)" != 0 ]; then
 fi
 
 if [ "$1" = "--remove" ]; then
-    if [ -s /var/lib/draiveri/istoria.json ]; then
-        echo "Внимание: програмата е инсталирала неща. Ако искаш и тях да махнеш, първо пусни:  draiveri --reset"
+    if [ -s /var/lib/drv-marka/istoria.json ]; then
+        echo "Внимание: програмата е инсталирала неща. Ако искаш и тях да махнеш, първо пусни:  drv-marka --reset"
     fi
     rm -rf "$DEST" "$APP" "$BIN"
-    echo "Програмата е махната. Историята остава в /var/lib/draiveri."
+    echo "Програмата е махната. Историята остава в /var/lib/drv-marka."
     exit 0
 fi
 
@@ -35,24 +35,24 @@ if [ -n "$NEED" ]; then
 fi
 
 mkdir -p "$DEST"
-cp "$SRC"/draiveri.py "$SRC"/jezgro.py "$SRC"/izvori.py "$SRC"/popravi.py "$DEST"/
+cp "$SRC"/drv-marka.py "$SRC"/jezgro.py "$SRC"/izvori.py "$SRC"/popravi.py "$DEST"/
 chown -R root:root "$DEST"
-chmod 755 "$DEST" "$DEST"/draiveri.py "$DEST"/popravi.py
+chmod 755 "$DEST" "$DEST"/drv-marka.py "$DEST"/popravi.py
 chmod 644 "$DEST"/jezgro.py "$DEST"/izvori.py
-ln -sf "$DEST/draiveri.py" "$BIN"
+ln -sf "$DEST/drv-marka.py" "$BIN"
 
 cat > "$APP" <<EOF
 [Desktop Entry]
 Type=Application
-Name=Драйвери
+Name=Драйвери (drv-marka)
 Name[en]=Drivers
 Comment=Проверка, търсене и инсталиране на драйвери
 Comment[en]=Check, find and install drivers on Debian
-Exec=$DEST/draiveri.py
+Exec=$DEST/drv-marka.py
 Icon=preferences-system
 Terminal=false
 Categories=System;Settings;HardwareSettings;
-StartupWMClass=com.palamarka.draiveri
+StartupWMClass=com.palamarka.drvmarka
 EOF
 chmod 644 "$APP"
-echo "Готово. „Драйвери“ е в менюто, а в терминала: draiveri --text"
+echo "Готово. „Драйвери (drv-marka)“ е в менюто, а в терминала: drv-marka --text"

@@ -1,18 +1,20 @@
-# Драйвери (Drivers for Debian)
+# drv-marka — Драйвери за Debian
 
 Малка програма за Debian 12/13, която след нова инсталация проверява кои драйвери и кой фърмуер липсват, намира правилните пакети за **този** компютър и ги инсталира с едно натискане. Ако нещо се обърка, бутонът „Върни както беше“ маха всичко, което програмата е сложила.
 
 *A small GTK 4 tool for Debian: checks for missing drivers and firmware after a fresh install, finds the right packages for the hardware, installs them, and can undo everything it did. The interface is in Bulgarian.*
 
+> Програмата се казваше „draiveri“. Новият пакет `drv-marka` замества стария сам и пренася историята му, така че „Върни“ помни и направеното от старата версия.
+
 ## Инсталиране
 
-Свали `draiveri_*_all.deb` от [Releases](https://github.com/nikogurzov/draiveri-debian/releases) и го инсталирай с двоен клик или:
+Свали `drv-marka_*_all.deb` от [Releases](https://github.com/nikogurzov/drv-marka/releases) и го инсталирай с двоен клик или:
 
 ```sh
-sudo apt install ./draiveri_0.5.0_all.deb     # на чиста Debian без sudo:  su -c "apt install ./draiveri_0.5.0_all.deb"
+sudo apt install ./drv-marka_0.5.0_all.deb     # на чиста Debian без sudo:  su -c "apt install ./drv-marka_0.5.0_all.deb"
 ```
 
-apt слага сам и нужното (GTK 4, pciutils, pkexec, isenkram-cli). „Драйвери“ се появява в менюто, а в терминала е `draiveri`. Махане: `sudo apt remove draiveri` (а инсталираното от програмата се маха преди това с „Върни“).
+apt слага сам и нужното (GTK 4, pciutils, pkexec, isenkram-cli). „Драйвери“ се появява в менюто, а в терминала е `drv-marka`. Махане: `sudo apt remove drv-marka` (а инсталираното от програмата се маха преди това с „Върни“).
 
 От изходния код: `./build-deb.sh` прави пакета в `dist/`. Има и `sudo ./install.sh`, без пакет.
 
@@ -39,22 +41,22 @@ apt слага сам и нужното (GTK 4, pciutils, pkexec, isenkram-cli).
 
 „Върни“ не маха ядрото, с което работиш в момента: стартирай със старото от менюто при стартиране и натисни „Върни“ пак.
 
-Всяка промяна се записва в `/var/lib/draiveri/istoria.json`, а старите извори в `/var/backups/draiveri/`.
+Всяка промяна се записва в `/var/lib/drv-marka/istoria.json`, а старите извори в `/var/backups/drv-marka/`.
 
 ## В терминала
 
 ```sh
-draiveri --text            # проверка
-draiveri --text --search   # проверка и търсене
-draiveri --fix             # търси и пита за всяка поправка
-draiveri --kernel          # ядрото: какво работи и инсталиране на по-ново
-draiveri --reset           # връща всичко, направено от програмата
+drv-marka --text            # проверка
+drv-marka --text --search   # проверка и търсене
+drv-marka --fix             # търси и пита за всяка поправка
+drv-marka --kernel          # ядрото: какво работи и инсталиране на по-ново
+drv-marka --reset           # връща всичко, направено от програмата
 ```
 
 ## Махане
 
 ```sh
-draiveri --reset           # ако искаш да махнеш и инсталираното от нея
+drv-marka --reset           # ако искаш да махнеш и инсталираното от нея
 sudo ./install.sh --remove
 ```
 

@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """Драйвери: проверка, търсене и инсталиране на драйвери за Debian.
-   ./draiveri.py                   прозорец
-   ./draiveri.py --text            проверка в терминала
-   ./draiveri.py --text --search   и търсене на драйвери за устройствата
-   ./draiveri.py --fix             търси и инсталира (пита преди всяко нещо)
-   ./draiveri.py --kernel          кое ядро работи и инсталиране на по-ново (по избор)
-   ./draiveri.py --reset           връща всичко, направено от програмата (като фабрично)
+   ./drv-marka.py                   прозорец
+   ./drv-marka.py --text            проверка в терминала
+   ./drv-marka.py --text --search   и търсене на драйвери за устройствата
+   ./drv-marka.py --fix             търси и инсталира (пита преди всяко нещо)
+   ./drv-marka.py --kernel          кое ядро работи и инсталиране на по-ново (по избор)
+   ./drv-marka.py --reset           връща всичко, направено от програмата (като фабрично)
 Проверката само чете. Нещо се променя само след „Поправи“ и паролата (pkexec)."""
 import os
 import subprocess
 import sys
 import threading
 
-HERE = os.path.dirname(os.path.realpath(__file__))   # realpath: командата draiveri е символна връзка
+HERE = os.path.dirname(os.path.realpath(__file__))   # realpath: командата drv-marka е символна връзка
 sys.path.insert(0, HERE)
 import jezgro
 
@@ -70,7 +70,7 @@ def main_gui():
         from gi.repository import Gdk, Gio, GLib, Gtk, Pango
     except (ImportError, ValueError):
         print("Липсва GTK 4 за прозореца. Инсталирай го с:\n  sudo apt install python3-gi gir1.2-gtk-4.0\n"
-              "Дотогава работи в терминала: draiveri.py --text --search  или  draiveri.py --fix\n")
+              "Дотогава работи в терминала: drv-marka.py --text --search  или  drv-marka.py --fix\n")
         main_text(False)
         return
 
@@ -158,7 +158,7 @@ def main_gui():
 
     class Win(Gtk.ApplicationWindow):
         def __init__(self, app):
-            super().__init__(application=app, title="Драйвери", default_width=860, default_height=700)
+            super().__init__(application=app, title="Драйвери (drv-marka)", default_width=860, default_height=700)
             self.report, self.deep = None, False
             head = Gtk.HeaderBar()
             self.set_titlebar(head)
@@ -312,14 +312,14 @@ def main_gui():
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), p, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         Win(app).present()
 
-    app = Gtk.Application(application_id="com.palamarka.draiveri", flags=Gio.ApplicationFlags.FLAGS_NONE)
+    app = Gtk.Application(application_id="com.palamarka.drvmarka", flags=Gio.ApplicationFlags.FLAGS_NONE)
     app.connect("activate", activate)
     app.run([sys.argv[0]])
 
 
 if __name__ == "__main__":
     if "--version" in sys.argv:
-        print("draiveri", jezgro.VERSION)
+        print("drv-marka", jezgro.VERSION)
     elif "--fix" in sys.argv:
         main_fix()
     elif "--reset" in sys.argv:

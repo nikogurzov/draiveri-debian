@@ -478,7 +478,8 @@ def kernels():
 
 NO_LOG = "Нямам достъп до дневника на ядрото, затова не виждам липсващ фърмуер. Поправката „Достъп до дневника“ го оправя."
 RELOGIN = "Вече си в групата adm, но това важи след излизане и влизане отново в системата. Дотогава не виждам липсващия фърмуер."
-ISTORIA = "/var/lib/draiveri/istoria.json"
+ISTORIA = "/var/lib/drv-marka/istoria.json"
+ISTORIA_OLD = "/var/lib/draiveri/istoria.json"   # преди преименуването; пренася се при първата поправка
 
 
 def adm_pending():
@@ -501,6 +502,8 @@ def would_remove(pkgs):
 def history(path=ISTORIA):
     """Какво е направила програмата досега (за „Върни както беше“)."""
     import json
+    if path == ISTORIA and not os.path.exists(ISTORIA) and os.path.exists(ISTORIA_OLD):
+        path = ISTORIA_OLD
     try:
         with open(path) as f:
             return json.load(f)
@@ -598,11 +601,11 @@ def as_text(r):
             L.append(f"{mark[f.level]} {f.title}: {f.detail}")
         L.append("")
     if r.fixes:
-        L.append("МОЖЕ ДА СЕ ПОПРАВИ (draiveri.py --fix)")
+        L.append("МОЖЕ ДА СЕ ПОПРАВИ (drv-marka.py --fix)")
         L += [f"{'+' if f.default else '?'} {f.title}: {f.detail}" for f in r.fixes] + [""]
     if r.history:
         n = len({p for e in r.history for p in e.get("packages", [])})
-        L += [f"НАПРАВЕНО ОТ ПРОГРАМАТА: {len(r.history)} пъти, {n} пакета (връщане: draiveri.py --reset)", ""]
+        L += [f"НАПРАВЕНО ОТ ПРОГРАМАТА: {len(r.history)} пъти, {n} пакета (връщане: drv-marka.py --reset)", ""]
     if r.limits:
         L.append("НЕ БЕШЕ ПРОВЕРЕНО")
         L += [f"• {x}" for x in r.limits] + [""]

@@ -1,12 +1,20 @@
 #!/bin/sh
 set -e
-# старото копие от install.sh (/opt/draiveri) иначе засенчва новото в PATH
 if [ "$1" = configure ]; then
-    if [ -L /usr/local/bin/draiveri ] && [ "$(readlink /usr/local/bin/draiveri)" = /opt/draiveri/draiveri.py ]; then
-        rm -f /usr/local/bin/draiveri
-    fi
-    if [ -f /opt/draiveri/jezgro.py ] && [ -f /opt/draiveri/popravi.py ]; then
-        rm -rf /opt/draiveri
-    fi
+    # старите копия от install.sh (/opt/draiveri, /opt/drv-marka) иначе засенчват новото в PATH
+    for n in draiveri drv-marka; do
+        if [ -L /usr/local/bin/$n ] && [ "$(readlink /usr/local/bin/$n)" = /opt/$n/$n.py ]; then
+            rm -f /usr/local/bin/$n
+        fi
+        if [ -f /opt/$n/jezgro.py ] && [ -f /opt/$n/popravi.py ]; then
+            rm -rf /opt/$n
+        fi
+    done
+    # програмата се казваше „draiveri“: историята (за „Върни“) и старите извори се пренасят на новото място
+    for d in lib backups; do
+        if [ -d /var/$d/draiveri ] && [ ! -e /var/$d/drv-marka ]; then
+            mv /var/$d/draiveri /var/$d/drv-marka
+        fi
+    done
 fi
 exit 0

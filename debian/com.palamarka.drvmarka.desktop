@@ -1,11 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=Драйвери
-Name[en]=Drivers
+Name=Драйвери (drv-marka)
+Name[en]=Drivers (drv-marka)
 Comment=Проверка, търсене и инсталиране на драйвери
 Comment[en]=Check, find and install drivers on Debian
-Exec=/usr/bin/draiveri
+Exec=/usr/bin/drv-marka
 Icon=preferences-system
 Terminal=false
 Categories=System;Settings;HardwareSettings;
-StartupWMClass=com.palamarka.draiveri
+StartupWMClass=com.palamarka.drvmarka

@@ -6,6 +6,12 @@
 
 > Програмата се казваше „draiveri“. Новият пакет `drv-marka` замества стария сам и пренася историята му, така че „Върни“ помни и направеното от старата версия.
 
+![drv-marka: проверката след нова инсталация](docs/proverka.png)
+
+| Устройства | Заредени драйвери | Фърмуер и пакети | Ядро Linux |
+|---|---|---|---|
+| ![Устройства](docs/ustroistva.png) | ![Заредени драйвери](docs/drajveri.png) | ![Фърмуер и пакети](docs/firmuer.png) | ![Ядро Linux](docs/yadro.png) |
+
 ## Инсталиране
 
 Свали `drv-marka_*_all.deb` от [Releases](https://github.com/nikogurzov/drv-marka/releases) и го инсталирай с двоен клик или:
